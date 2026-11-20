@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Project Nativ on Android. No resources of its own: the label is literal and the theme is one of
+     Android's, so the package is a manifest, one dex and two .so files (dev/android-install.sh). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.crownparkcomputing.nativ"
+    android:versionCode="1"
+    android:versionName="0.1"
+    android:installLocation="auto">
+
+    <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35" />
+
+    <!-- SDL_GPU renders through Vulkan here; the game is drawn on the GPU or not at all -->
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="4198400" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application
+        android:label="Nativ"
+        android:allowBackup="true"
+        android:hardwareAccelerated="true"
+        android:extractNativeLibs="true"
+        android:enableOnBackInvokedCallback="false">
+
+        <activity android:name="com.crownparkcomputing.nativ.NativActivity"
+            android:label="Nativ"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

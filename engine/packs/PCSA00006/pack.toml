@@ -1,0 +1,99 @@
+# Super Stardust Delta (PCSA00006, US Vita release) -- Housemarque, the Vita entry in the Super
+# Stardust line. Only facts about the game; nothing of its code or data (the format: pipeline/packconf.py).
+NAME = "Super Stardust Delta"
+# REGION: the release this pack plays (its content id UP9000-PCSA00006_00-SSDELTA000000000, North
+# America); another region's release is another build, not played yet
+REGION = "US"
+BASE = "game"
+SPLIT = 16                # recompiled C split into this many part files; a 0x2e4cfc (3.0 MB) .text, six times TxK's
+# sce_module/libc.suprx (C runtime, libm, the C++ library), the firmware's libgxm and its GPU services
+# library (GXM runs as Sony's code; gxm_sony.c observes its rendering boundary), and libfios2: unlike
+# TxK this eboot really does import SceFios2, and its data is one archive (stream.dat) read through
+# FIOS's dearchiver over the host's sceIo calls (io.c).
+MODULES = "libc libgxm_es4 libgpu_es4 libfios2"
+# play: the GPU renderer, the real clock. RECOMP_GAME_OPTIONS=online: the game's NP imports (sceNpInit,
+# sceNpCheckCallback, sceNpGetServiceState, the score boards) are implemented in runtime/net/np.c, but
+# hle.c installs hle_np/hle_net/hle_http/hle_ssl_local ONLY for a game run online -- without this they
+# all report "not implemented" and return 0, which is not what this game expects.
+# RECOMP_MOUSE_LOOK=0: this game aims nothing with the mouse -- the ship is the sticks, and its menus,
+# its EULA and its "Touch to Start" are the touch screen -- so the pointer is never captured and a left
+# click is a touch, not the R trigger. Captured (the default), clicking Accept on the EULA fired R and
+# the screen appeared not to respond. Only the default: the F10 menu's Mouse look toggle still wins.
+RUN_ENV = "RECOMP_GAME_OPTIONS=online RECOMP_MOUSE_LOOK=0"
+# the gate renders on the GPU, not the software backend: gfx_soft.c's name-matched stand-in shaders
+# know none of this game's vertex programs, so every draw is skipped ("no position attribute, draw
+# skipped") and the frame comes out plain white. RECOMP_SHADERS=interp renders it properly but is far
+# too slow for a gate. RECOMP_ONLINE=1: a headless run is offline unless it says otherwise (net.c), and
+# offline the NP imports above go back to reporting "not implemented" -- the game never reaches its EULA.
+TEST_ENV = "RECOMP_GFX=gpu RECOMP_CLOCK=fixed RECOMP_ONLINE=1"
+# A scripted run from a fresh file system (no saves, so the first-run EULA is always shown) to the main
+# menu. The EULA is a scrolling document and its Accept button does nothing until the text has been read
+# to the end -- holding d-pad down (hex Vita mask 40) scrolls it, ~1700 frames to the last clause, and the
+# "more below" arrow under the text goes out when there is no more. Then: Accept (the touch panel's
+# coordinates are the Vita's own, 1920x1088, double the 960x544 screen), "Touch to Start" on the title
+# screen, and Play -> the main menu.
+TEST_INPUT = "300-2000:40"
+TEST_TOUCH = "2100-2160:1416,980;4600-4660:960,544"
+TEST_FRAMES = 5000        # the frame the test captures (the main menu, standing)
+TEST_TIMEOUT = 900        # 5000 frames of this game's menus take about 6 minutes headless
+# No reference frame is recorded yet (vitarecomp check SKIPs this title), and it isn't the renderer:
+# two runs of frame 5000 draw the same menu with the same text, but the brushed-metal panel's sheen
+# sweeps across it and lands at a different phase, which is 26% of the pixels. Under RECOMP_CLOCK=fixed
+# guest time follows the frame count, so an animation driven by the guest clock would land identically
+# -- something else is feeding that one. Worth pinning down before this gates, since a gate here would
+# catch nothing until it does.
+# TEST_TOLERANCE = would have to be ~30% to pass, which gates nothing.
+# The gate stops at the menu because gameplay is another 8600 frames -- a quarter of an hour headless,
+# far more than a gate should cost. To drive a run all the way into a game (Arcade > Pure > Normal >
+# planet Alena > the controls card), override the two scripts for that run and give it the time:
+#   TIMEOUT=2400 TEST_FRAMES=13800 TEST_INPUT="300-2000:40" \
+#   TEST_TOUCH="2100-2160:1416,980;4600-4660:960,544;5200-5260:500,256;5700-5760:840,320;6300-6360:840,620;7000-7060:840,620;9500-9560:840,320;13000-13060:1780,980" \
+#   vitarecomp test PCSA00006
+# Gameplay starts around frame 13200. A capture of a frame in play (vitarecomp capture PCSA00006 13600,
+# with those same overrides and RECOMP_CAPTURE_FRAMES=4 -- one frame alone can catch a present with no
+# draws in it) replays in seconds and is how the instancing bug below was found and fixed.
+
+# WHERE THIS STANDS (2026-11-14). The game boots, draws, and plays: EULA -> title -> main menu ->
+# Arcade > Pure > Normal > planet Alena -> the controls card -> gameplay, with the planet, the hex
+# shield, the HUD (lives, bombs, countdown, multiplier, weapon overdrive) and "Phase 1 / 5" all correct
+# and the score counting up. Three things were settled getting there:
+#   - The EULA was never stuck. It wants its text scrolled to the end before Accept arms, which is what
+#     the screen's own "more below" arrow says. Nothing was wrong with the runtime: the earlier scripted
+#     taps never reached the game, because `vitarecomp test` sets RECOMP_TOUCH from the pack's TEST_TOUCH
+#     *after* EXTRA_ENV, so an EXTRA_ENV RECOMP_TOUCH is overwritten by the pack's (then empty) one. Set
+#     TEST_TOUCH in the environment to script a touch for one run, never RECOMP_TOUCH.
+#   - It ran as the trial. sceAppUtilAppParamGetInt was unimplemented, which returns success without
+#     writing the value, and parameter 0 is the SKU flag: the game read the zero as a demo ("Trial
+#     Version" over the title, "Not available in demo version" on every mode, difficulty and planet but
+#     the first). apputil.c now answers 3, SCE_APPUTIL_APPPARAM_SKU_FLAG_FULL, and all of it unlocks
+#     into the game's own progression text ("Complete planet Alena to unlock this planet").
+#   - In-game geometry came out as huge stretched shards, and it was instancing. The game draws its
+#     ship, its debris and its asteroids with a second vertex stream whose SceGxmIndexSource is an
+#     INSTANCE one (sceGxmPrecomputedDrawSetParamsInstanced), carrying that instance's rotation rows,
+#     translation and colour. gxm_sony.c read only the stride out of SceGxmVertexStream and dropped
+#     the index source, so every vertex read a different record: each triangle was stretched between
+#     three instances' positions. Both backends now read an instance stream by the instance
+#     (runtime/gfx: gfx.h, gfx_soft.c, gfx_gpu.c), and the frame renders correctly. Coverage over a
+#     gameplay run counts 11,524 single-instance draws (their wrap is the whole index count, so every
+#     vertex reads record 0) and 311 two-instance ones, which are the draws that wrap the index list.
+#     Caught by
+#     replaying one captured frame against BOTH backends: the software interpreter drew the same
+#     shards as the GPU, which ruled out the renderer and the shader translator and put it in what
+#     the draw was given. RECOMP_LOG_VSTREAMS=<frame> prints each draw's streams and index sources.
+# What has been RULED OUT along the way, each measured, not assumed: touch delivery (RECOMP_LOG_TOUCH
+# shows every contact); the update loop (sceTouchPeek, sceCtrlPeekBufferPositive, sceMotionGetState,
+# sceCommonDialogUpdate and sceDisplaySetFrameBuf each once a frame); the enter button
+# (sceAppUtilSystemParamGetInt(2) answers cross); the dialogs (all 13 SceCommonDialog imports); the NP
+# service; its add-ons (addcont0:SSDELTA000000DLC/dlc.dat and .../SSDELTA000000DBG/debug.dat are opened
+# and not found, and empty markers change nothing); and any untranslated instruction (no UNIMPL trap has
+# ever fired). One real stall was found and fixed on the way (runtime/net/np.c): the game called
+# sceNpScoreCreateTitleCtx once a frame forever, because a context id has to be positive and an
+# unimplemented import returns 0.
+
+# The build of the game this pack plays: the SHA-256 of its eboot.bin.elf (vitarecomp import tells a
+# copy's version by it). Decrypted 2026-11-14 from a NoNpDrm dump (licence work.bin,
+# UP9000-PCSA00006_00-SSDELTA000000000). Its add-on (SSDELTA000000DLC) carries data but needs no
+# entry here: the runtime grants every add-on the game asks for (runtime/core/apputil.c).
+[versions."1.00"]
+sha256 = "69f04c31b853c4194b4dce18f041315ad1188e8b663dcb527be7cf80cd8e3220"
+status = "supported"      # the game as installed; it has no update

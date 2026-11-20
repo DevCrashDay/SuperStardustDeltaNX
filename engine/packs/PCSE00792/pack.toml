@@ -1,0 +1,82 @@
+# DARIUSBURST Chronicle Saviours (PCSE00792, US Vita release) -- Taito/Pyramid, the Vita entry in the
+# Darius line. Only facts about the game; nothing of its code or data (the format: pipeline/packconf.py).
+NAME = "DARIUSBURST Chronicle Saviours"
+# REGION: the release this pack plays (its content id UP1056-PCSE00792_00-DARIUSBURSTCS0US, North
+# America); another region's release is another build, not played yet
+REGION = "US"
+BASE = "game"
+# recompiled C split into this many part files. Its executable segment is 0x1773a78 (23.5 MB) -- twice
+# Killzone's ELF and eight times Super Stardust's -- so it takes far more parts than any game here yet.
+SPLIT = 64
+# sce_module/libc.suprx (C runtime, libm, the C++ library), libfios2 (its data is read through FIOS)
+# and libult (SceUlt, the user-level threading library -- the first game here to carry it), plus the
+# firmware's libgxm and its GPU services library (GXM runs as Sony's code; gxm_sony.c observes its
+# rendering boundary).
+MODULES = "libc libgxm_es4 libgpu_es4 libfios2 libult"
+
+# A scripted run to the title screen (vitarecomp test): the cross presses that clear the autosave
+# notice and then the cabinet dialog (RECOMP_INPUT masks; 0x4000 is cross). No reference frame is
+# accepted yet -- the cabinet it assigns ("Cabinet:0026") is part of the frame and has not been shown
+# to be the same every run, so the gate would have to land somewhere else or wait for the menu alone.
+# RECOMP_MOUSE_LOOK=0: nothing in this game is aimed with the mouse -- it is buttons and the touch
+# screen -- so capturing the pointer only traps it in the window (as for TxK).
+RUN_ENV = "RECOMP_MOUSE_LOOK=0"
+TEST_ENV = "RECOMP_GFX=gpu"
+TEST_INPUT = "1300-1340:4000,1500-1540:4000,1700-1740:4000,1900-1940:4000,2100-2140:4000"
+TEST_FRAMES = 2600
+TEST_TIMEOUT = 600
+# Where this stands (2026-11-15). It BOOTS, RUNS AND DRAWS: loading screen -> the autosave notice ->
+# the title screen with its menu (DLC MODE, RANKING, OPTIONS) and the cabinet-assignment dialog,
+# holding 60 fps (10,500 frames in 176 s). The game (v1.00) and its v1.11 update decrypt from a
+# NoNpDrm dump; the import reports 40 libraries and 590 imports with every one named; the recompile
+# turns 39,879 functions and 10,461,620 instructions into 1.4 GB of C across 64 parts with 254
+# unsupported (0.002%), and that builds to a 160 MB host. By far the largest game here: 23.5 MB of
+# code, eight times Super Stardust's, ten times its instruction count.
+#
+# What it took, beyond the pipeline:
+#
+#   uqsub8, the parallel-byte saturating subtract a libc finds the end of a string with. Eight sites
+#   in libc, and it stopped in strlen without it.
+#
+#   sceNgsSystemGetRequiredMemorySize had to come down (runtime/audio/ngs.c). It used to answer
+#   0x10000; this game keeps its NGS work area in a fixed buffer of 0x2000 and so its own "how big
+#   is the system" helper returned -1 -- which its caller passed STRAIGHT TO MEMSET as a length.
+#   memset(heap, 0, 0xffffffff) then zeroed the guest address space upward from its heap at
+#   0x1608a0cc, through every thread stack above it. The Vita faults on that at once; here the whole
+#   4 GB is mapped, so the game ran on and the damage surfaced three frames later, somewhere else
+#   entirely: libgxm's display-queue thread (0x8900b05c) losing the game's flip callback.
+#
+# That second one is worth keeping as a worked example, because the symptom named nothing:
+#
+#     8900b0c4  ldr r3, [r4, #0x14]   the game's flip callback, out of libgxm's control block
+#     8900b0c8  blx r3                "call to 0: neither recompiled code nor an import"
+#
+#   Eight passes were right and the ninth had r4 zero, on the same thread, the same Cpu and the same
+#   stack pointer. What it was NOT, each measured rather than assumed: the game not registering one
+#   (sceGxmInitialize gets callback 0x81f7cb05 and returns 0); the host intercepting it (sceGxmInitialize
+#   has no host handler -- libgxm runs as Sony's own recompiled code); the module (the same libgxm
+#   presents thousands of frames for Super Stardust); the game stalling (it renders 8 scenes and
+#   queues 8 entries -- the consumer is what breaks); the thread being entered twice (the entry hook
+#   fires once); the state being swapped or wiped (sp and lr intact while r4 is zero).
+#
+#   What found it: r4 is callee-saved, so the game's callback saves it with `push {r4, lr}` and takes
+#   it back with `pop {r4, pc}` -- and the recompiler's pop reads it out of GUEST MEMORY and returns,
+#   so a callee-saved register comes home through the guest stack, not through C. A watchpoint on
+#   c->r[4] showed the pop itself writing the zero: the stack word was gone, not the register. The
+#   word was at the callback's sp+0x20, and bracketing the stages of sceDisplaySetFrameBuf (which the
+#   callback calls, so it runs inside that window) placed the loss at the vblank sleep. A one-shot
+#   mprotect over that window then caught the writer: the MAIN thread, in a memset, from lr 0x81feb3b3.
+#   A hardware watchpoint had never fired on it because glibc's memset takes a non-temporal path for
+#   a length that large -- and 14 runs with one armed never even reproduced the race.
+#
+#   The general lesson for this runtime: a guest length that is nonsense is not a guest crash here.
+#   Every address a game can name is mapped, so a bad length writes quietly over whatever the host
+#   put next, and the report arrives frames later on another thread. When something far away loses a
+#   callee-saved register, suspect the guest stack before the translation.
+
+# The build of the game this pack plays: the SHA-256 of its eboot.bin.elf (vitarecomp import tells a
+# copy's version by it). Decrypted 2026-11-15 from a NoNpDrm dump (app + patch, licence work.bin,
+# UP1056-PCSE00792_00-DARIUSBURSTCS0US).
+[versions."1.11"]
+sha256 = "3f7c185208a5ac4580fbe58daa088713e6b6df117fc0beedf2b505a5863acf8a"
+status = "recommended"    # the game with its 1.11 update layered over it (app0_patched)

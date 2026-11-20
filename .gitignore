@@ -1,0 +1,43 @@
+# Local caches, environments, and user outputs
+.cache/
+.venv/
+.test_out/
+__pycache__/
+*.pyc
+*.pyo
+
+# Never commit copyrighted game dumps, decrypted data, firmware, keys, or built binaries
+Super Stardust Delta/
+*.nro
+*.nsp
+*.img
+*.elf
+*.nso
+*.npdm
+*.nacp
+*.nca
+*.PUP
+*.rif
+*.bin
+*.suprx*
+keys.dat
+prod.keys
+
+forwarder/exefs/
+forwarder/control/
+forwarder/out/
+forwarder/hacbrewpack_backup/
+
+# Engine build/library directories
+engine/dump/
+engine/build/
+engine/.venv/
+engine/.tools/
+engine/toolchain/
+engine/toolchain-android/
+engine/launcher/nativ
+engine/launcher/nativ.exe
+engine/launcher/SDL3.dll
+engine/launcher/obj_win/
+engine/docs/android.md
+engine/dev/local.env

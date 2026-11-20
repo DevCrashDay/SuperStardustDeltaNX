@@ -1,0 +1,33 @@
+# TxK (PCSE00397, US Vita release) -- Llamasoft's Tempest-lineage tube shooter, Jeff Minter and Ivan Zorzin.
+# Only facts about the game; nothing of its code or data (the format: pipeline/packconf.py).
+NAME = "TxK"
+# REGION: the release this pack plays (its content id UP4461-PCSE00397_00-LLAMASOFTTXK0001, North America);
+# another region's release is another build, not played yet
+REGION = "US"
+BASE = "game"
+SPLIT = 8                 # recompiled C split into this many part files; a 0x7b52c (505 KB) .text, the smallest game here
+# sce_module/libc.suprx (C runtime, libm, the C++ library), and the firmware's libgxm and its GPU services library
+# (GXM runs as Sony's code; gxm_sony.c observes its rendering boundary). No libfios2: the eboot imports no SceFios2 --
+# TxK reads its assets (app0:assets/*.wav, *.at9, *.gxt) as loose files through sceIo, with no PSARC archive.
+MODULES = "libc libgxm_es4 libgpu_es4"
+# play: the GPU renderer, the real clock. RECOMP_MOUSE_LOOK=0: TxK aims nothing with the mouse (it is
+# buttons and the touch screen), so the pointer is never captured -- it stays free for the desktop, and
+# Alt+click still touches the screen. Only the default: the F10 menu's Mouse look toggle still wins.
+RUN_ENV = "RECOMP_MOUSE_LOOK=0"
+TEST_ENV = "RECOMP_GFX=gpu RECOMP_CLOCK=fixed"   # the gate renders on the GPU, not the software backend: TxK's fragment programs use parameters gfx_soft.c does not feed ("unknown fragment parameter: ... fprog [tint testTex1]"), so a soft frame comes out flat-filled on white -- geometry right, shading wrong. RECOMP_SHADERS=interp renders it correctly but is far too slow for a gate (minutes a frame on this game's additive particle load).
+# a scripted run from the title screen into level 1 (frames:buttons, hex Vita masks: 8 start, 4000 cross):
+# the attract loop -> START -> the mode screens confirmed with Cross -> PURE MODE, LEVEL 1 ("HELLO"), the
+# player's claw on the web with the first enemies climbing it
+TEST_INPUT = "900-920:8,1100-1120:4000,1300-1320:4000,1500-1520:4000"
+TEST_FRAMES = 2400        # the frame the test captures (level 1 in play)
+
+# The builds of the game this pack plays: the SHA-256 of each one's eboot.bin.elf
+# (vitarecomp import tells a copy's version by it). Both decrypted 2026-11-14 from a NoNpDrm dump
+# (app + patch, licence work.bin UP4461-PCSE00397_00-LLAMASOFTTXK0001).
+[versions."1.01"]
+sha256 = "bfbf10d6999145763a6c3b3d30d55aeb03a7436512f80e76cd37bf762fe5b310"
+status = "recommended"    # the game with its 1.01 update layered over it (app0_patched)
+
+[versions."1.00"]
+sha256 = "f6e03513a07146629dc99f8fedb8374861279f79c3ac8508f45677ba13dd35da"
+status = "supported"      # the game as installed, no update

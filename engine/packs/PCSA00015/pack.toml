@@ -1,0 +1,103 @@
+# WipEout 2048 (PCSA00015, US Vita release) -- Studio Liverpool's launch-window anti-gravity racer,
+# the last WipEout the studio made. Only facts about the game; nothing of its code or data (the
+# format: pipeline/packconf.py).
+NAME = "WipEout 2048"
+# REGION: the release this pack plays (its content id UP9000-PCSA00015_00-WIPEOUT2048BASE0, North
+# America); another region's release is another build, not played yet
+REGION = "US"
+BASE = "game"
+# recompiled C split into this many part files. Its executable segment is 0x518280 (5.1 MB) -- about
+# one and three quarter times Super Stardust's, a fifth of DARIUSBURST's.
+SPLIT = 32
+# sce_module/libc.suprx (C runtime, libm, the C++ library) plus the firmware's libgxm and its GPU
+# services library (GXM runs as Sony's code; gxm_sony.c observes its rendering boundary).
+#
+# BOTH FIOS2 MODULES, which is the catch. This copy ships each of libc, libfios2 and libult twice,
+# once plainly and once with an "_m" suffix, and the pair are NOT interchangeable: the "_m" build
+# exports the same library under a renamed symbol. libfios2.suprx exports SceFios2/SceLibFios2;
+# libfios2_m.suprx exports mceFios2/mceLibFios2. The eboot imports mceFios2 and libc.suprx imports
+# SceFios2, so the game needs both, and with only the plain one every mceFios2_* call fell through to
+# "not implemented -- returns 0" and the game never read a byte of its own data: it sat polling
+# sceKernelGetProcessTime and sceDisplayGetVcount forty million times a run, drawing six empty draws
+# a frame to a black screen.
+#
+# libc is the plain one: the eboot imports SceLibc/SceLibm/SceLibstdcxx, which is what it exports
+# (libc_m exports mceLibc and is not what this eboot asks for). libult.suprx ships too, but nothing
+# imports SceUlt, so it is left out until something asks.
+MODULES = "libc libgxm_es4 libgpu_es4 libfios2 libfios2_m"
+
+# RECOMP_MOUSE_LOOK=0: nothing in this game is aimed with the mouse -- it is a racer, steered with
+# the sticks or the keys -- so capturing the pointer only traps it in the window (as for TxK and
+# DARIUSBURST).
+RUN_ENV = "RECOMP_MOUSE_LOOK=0"
+
+# Where this stands (2026-11-15). It PLAYS, at a locked 60 fps: its archives load, the GAME MODE menu
+# offers the DLC campaigns (HD, Fury) beside the single player one, and a race renders complete --
+# ship, track, crowd, sky, engine glow and HUD. The eboot is 5,509,120 bytes; the recompile turns 14,972
+# functions and 1,509,640 instructions into 237 MB of C across 32 parts with 256 unsupported
+# (0.017%), and that builds to a 44 MB host.
+#
+# What it took, beyond the pipeline:
+#
+#   sceDisplayGetVcount had to answer the vblank counter instead of 0 (runtime/gfx/display.c). This
+#   game paces itself by POLLING it rather than waiting on vblank, so against a stub it spun: 295
+#   million calls for two frames.
+#
+#   FUNCTION_SEEDS below: its MD5 is hand-written threaded code. One body at 0x8134abb0 walks a table
+#   of round snippets -- "addw ip, pc, #N" then "blx ip" to run one, "add.w ip, ip, #0x10; bx ip" to
+#   step to the next descriptor -- so the four round functions, the three descriptors and the epilogue
+#   are reached only through a register the analysis never sees loaded. Found one per run otherwise,
+#   at a rebuild each; read the routine instead and seeded all eight at once. (An ADR-into-a-register
+#   scan in analyze.py would find the four snippets for any game, next to the movw/movt one already
+#   there -- worth doing when there is time to re-gate every existing title for it.)
+#
+#   BOTH FIOS2 MODULES, above -- the one that mattered. Until then every mceFios2_* call answered
+#   "not implemented -- returns 0", the game never read a byte of its own data, and it sat polling
+#   sceKernelGetProcessTime and sceDisplayGetVcount forty million times a run, drawing six empty
+#   draws a frame to a black screen. It looked like a hang and was a missing module.
+#
+#   Its add-ons had to be installed at all: `vitarecomp add` used to say an add-on needs nothing,
+#   which is true of its LICENCE and false of its DATA. WipEout's HD and Fury campaigns are two
+#   300 MB archives the game opens at addcont0:/<dir>/..., and it simply went without them.
+#
+# About this copy. The dump is MaiDumpTool's, not NoNpDrm's: there is no sce_sys/package/work.bin and
+# no .rif anywhere, and its eboot is fake-signed. It decrypts with no klicensee at all ("klicensee:
+# none", 8 SELFs, 0 failed) -- which is why `vitarecomp add` no longer refuses an update when its
+# game left no licence behind, since neither of them ever wanted one (pipeline/vitarecomp.py).
+#
+# The game is played as its 1.04 update layered over the release (app0_patched, 530 files).
+#
+#   TWO RENDER-TARGET READBACKS A FRAME, which is what held it at 20 fps. A readback is not a copy:
+#   it is SubmitAndAcquireFence then WaitForGPUFences, so the CPU stalls on the whole frame's queued
+#   GPU work. Against 856 draws costing 43 ms between them, the two downloads cost 35-44 ms alone.
+#   Both were view-path gaps, both now closed in runtime/gfx/gfx_gpu.c:
+#     - a 480x272 target declared ARGB: view_mode served mode 0 only for the default component order
+#     - a 256x1536 target, six 256x256 faces: the reflection cube map. A cube texture's layout is 3
+#       and view_mapping had no case for it, so it fell all the way through to guest memory. The six
+#       faces are consecutive in memory and so are bands of the target, which copy into the 6-layer
+#       array the ordinary cube upload makes -- on the GPU, with no wait (cube_view).
+#   22 fps -> 60, and no target is downloaded per frame any more.
+#
+#   A RING OF LUMINANCE TARGETS read as one (runtime/gfx/gfx_gpu.c). The read watch marks the target
+#   the CPU actually touched, and this game rotates THREE 256x136 targets 0x28000 apart for its
+#   exposure: one was marked and read back, the other two stayed on the GPU with a stale image, so
+#   two frames in three the exposure read never-written memory and opened to its maximum. The race
+#   preview blew out to white and back, frame after frame -- the same failure the renderer's notes
+#   record for Uncharted and Unit 13. Proved by RECOMP_GPU_READBACK_ALL=1 (84 brightness swings in
+#   672 recorded frames -> 5 in 595, and those 5 are real scene changes), then narrowed to the ring
+#   rather than every target, which would have dragged the 960x544 buffers down with it. A target
+#   now counts as read when any target of its exact shape has been.
+#
+# Still to look at: its video (SceAvPlayer/SceMp4/SceVideodecUser/SceAudiodecUser), its audio
+# (SceNgs), and the online set (SceNp*, SceHttp, SceNet, SceSsl) -- RECOMP_GAME_OPTIONS=online is
+# likely to matter here as it does for Super Stardust.
+
+# The entries its threaded MD5 is reached through (see above): four round snippets, three descriptors
+# and the epilogue. Without these a run falls into one of them and stops.
+FUNCTION_SEEDS = "0x8134ac0c:thumb 0x8134ac1c:thumb 0x8134ac2e:thumb 0x8134ac3e:thumb 0x8134ac50:thumb 0x8134ac60:thumb 0x8134ac72:thumb 0x8134ac82:thumb"
+
+# The build of the game this pack plays: the SHA-256 of its eboot.bin.elf (vitarecomp import tells a
+# copy's version by it). Decrypted 2026-11-15 from a MaiDump dump (game + its 1.04 update).
+[versions."1.04"]
+sha256 = "fc2e2a003a7f28c83d0237ca521192149da6bb9a2bcb4ab3f87553addad5fa26"
+status = "recommended"    # the game with its 1.04 update layered over it (app0_patched)
